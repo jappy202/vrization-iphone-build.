@@ -12,14 +12,32 @@ permissions:
 jobs:
   iphone:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: source
     steps:
       - name: Check out reviewed upstream source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          path: source
           repository: LexZeon/VRization
           ref: 56f9db52bfb56edfdea92c1864f6bee28fa4f28f
           persist-credentials: false
+
+      - name: Check out personal build customizations
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: build-config
+          persist-credentials: false
+
+      - name: Apply reviewed phone fit changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check ../build-config/patches/phone-fit.patch
+          git apply ../build-config/patches/phone-fit.patch
+          python3 scripts/check_docs.py
 
       - name: Record tools and source
         shell: bash
@@ -27,6 +45,7 @@ jobs:
           set -euo pipefail
           mkdir -p output
           git rev-parse HEAD > output/source-commit.txt
+          shasum -a 256 ../build-config/patches/phone-fit.patch > output/customization-SHA256.txt
           xcodebuild -version | tee output/xcode-version.txt
           xcrun --sdk iphoneos --show-sdk-version | tee output/ios-sdk-version.txt
 
@@ -52,6 +71,32 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY= build 2>&1 | tee output/device-build.log
 
+      - name: Verify calibration persistence and editor exit in iPhone Simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYCODE'
+          import json, os, re, subprocess
+          from pathlib import Path
+          devices = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devices', 'available', '--json']))['devices']
+          phones = [(tuple(map(int, re.findall(r'\d+', runtime.split('.iOS-', 1)[1]))), row['udid'])
+                    for runtime, rows in devices.items() if '.iOS-' in runtime
+                    for row in rows if row.get('isAvailable') and row['name'].startswith('iPhone')]
+          if not phones:
+              raise SystemExit('No iPhone Simulator runtime available')
+          device = max(phones)[1]
+          command = ['xcodebuild', '-project', 'ios/VRizationSteamVR.xcodeproj', '-scheme', 'VRizationSteamVR',
+                     '-configuration', 'Debug', '-destination', 'platform=iOS Simulator,id=' + device,
+                     '-derivedDataPath', os.environ['RUNNER_TEMP'] + '/vrization-fit-simulator',
+                     '-resultBundlePath', str(Path('output/EyeFit.xcresult').resolve()),
+                     '-parallel-testing-enabled', 'NO', '-test-timeouts-enabled', 'YES',
+                     '-default-test-execution-time-allowance', '180', '-maximum-test-execution-time-allowance', '300',
+                     '-only-testing:VRizationSteamVRAppUITests/SteamVRViewerTests/testLocalAlignmentPersistenceAndEditorExit',
+                     'CODE_SIGNING_ALLOWED=NO', 'test']
+          with Path('output/simulator-ui.log').open('w') as log:
+              subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=1000)
+          PYCODE
+
       - name: Check device binary and package unsigned IPA
         shell: bash
         run: |
@@ -67,6 +112,7 @@ jobs:
               info = plistlib.load(f)
           assert info['CFBundleSupportedPlatforms'] == ['iPhoneOS'], info
           assert info['CFBundleIdentifier'] == 'org.vrization.ios.steamvr'
+          assert info['CFBundleVersion'] == '4'
           executable = app / info['CFBundleExecutable']
           assert executable.is_file()
           architectures = subprocess.check_output(['xcrun', 'lipo', '-archs', str(executable)], text=True).strip()
@@ -82,7 +128,7 @@ jobs:
           PY
           mkdir -p "$RUNNER_TEMP/vrization-ipa/Payload"
           ditto "$APP" "$RUNNER_TEMP/vrization-ipa/Payload/VRizationSteamVRApp.app"
-          (cd "$RUNNER_TEMP/vrization-ipa" && ditto -c -k --keepParent Payload "$GITHUB_WORKSPACE/output/VRization-SteamVR-unsigned.ipa")
+          (cd "$RUNNER_TEMP/vrization-ipa" && ditto -c -k --keepParent Payload "$GITHUB_WORKSPACE/source/output/VRization-SteamVR-unsigned.ipa")
           cp LICENSE output/LICENSE.txt
           cp THIRD_PARTY_NOTICES.md output/THIRD_PARTY_NOTICES.md
           shasum -a 256 output/VRization-SteamVR-unsigned.ipa > output/SHA256SUMS.txt
@@ -91,7 +137,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: VRization-iPhone-unsigned
-          path: output/
+          name: VRization-iPhone-build4
+          path: source/output/
           if-no-files-found: error
           retention-days: 30
