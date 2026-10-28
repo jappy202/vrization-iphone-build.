@@ -8,24 +8,33 @@ permissions:
   contents: read
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 20
     defaults:
       run:
-        working-directory: source
+        working-directory: ${{ runner.temp }}/vrization-driver/source
     steps:
-      - name: Check out pinned upstream / 获取固定上游
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: LexZeon/VRization
-          ref: 56f9db52bfb56edfdea92c1864f6bee28fa4f28f
-          path: source
-          persist-credentials: false
-      - name: Check out build configuration / 获取构建配置
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          path: build-config
-          persist-credentials: false
+      - name: Fetch pinned sources into a Windows-safe path / 获取固定源码
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          BUILD_CONFIG_SHA: ${{ github.sha }}
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'vrization-driver'
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          Set-Location $root
+          git init source
+          if ($LASTEXITCODE -ne 0) { throw 'Source init failed' }
+          git -C source fetch --depth 1 https://github.com/LexZeon/VRization.git 56f9db52bfb56edfdea92c1864f6bee28fa4f28f
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned source fetch failed' }
+          git -C source checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned source checkout failed' }
+          git init build-config
+          if ($LASTEXITCODE -ne 0) { throw 'Build configuration init failed' }
+          git -C build-config fetch --depth 1 https://github.com/jappy202/vrization-iphone-build..git $env:BUILD_CONFIG_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Build configuration fetch failed' }
+          git -C build-config checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Build configuration checkout failed' }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.12.10'
@@ -63,5 +72,5 @@ jobs:
         if: success()
         with:
           name: VRization-seated-driver-update
-          path: source/artifacts/seated-driver-update
+          path: ${{ runner.temp }}/vrization-driver/source/artifacts/seated-driver-update
           retention-days: 30
