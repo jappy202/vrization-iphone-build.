@@ -1,0 +1,210 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 53595d3..b55bbee 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -9,6 +9,8 @@ User-visible changes are listed newest first. Dates are GitHub publication dates
+ 
+ ### Unreleased
+ 
++- **Phone HMD seated calibration:** Publish driver-owned seated and standing origins for universe 904040 before activation, and report calibration-property failures. This addresses missing initialization evidenced by valid raw poses but invalid seated poses; physical acceptance and performance remain unverified. See [scope and provenance](experimental/steamvr/docs/SEATED_CALIBRATION.md).
++
+ - **Documentation only:** Added the LexZeon contact email, [lexzeonstudio@gmail.com](mailto:lexzeonstudio@gmail.com), to the root and SteamVR experiment README pages and the contribution and private security-reporting guidance.
+ 
+ ### [v0.5.1-steamvr-preview](https://github.com/LexZeon/VRization/releases/tag/v0.5.1-steamvr-preview) — 2026-10-11
+@@ -138,6 +140,8 @@ First Windows / Android preview.
+ 
+ ### 未发布
+ 
++- **手机头显坐姿校准：** 激活时先为坐标空间 904040 提供驱动自有的坐姿及站姿原点，并报告校准属性失败。此修改针对原始姿态有效但坐姿姿态无效所表明的初始化缺失；真机验收及性能尚未验证。详见[范围及来源](experimental/steamvr/docs/SEATED_CALIBRATION.md)。
++
+ - **纯文档：** 在根目录和 SteamVR 实验版 README、贡献指南及私密安全报告说明中补充 LexZeon 联系邮箱 [lexzeonstudio@gmail.com](mailto:lexzeonstudio@gmail.com)。
+ 
+ ### [v0.5.1-steamvr-preview](https://github.com/LexZeon/VRization/releases/tag/v0.5.1-steamvr-preview) — 2026-10-11
+diff --git a/experimental/steamvr/docs/SEATED_CALIBRATION.md b/experimental/steamvr/docs/SEATED_CALIBRATION.md
+new file mode 100644
+index 0000000..2829c07
+--- /dev/null
++++ b/experimental/steamvr/docs/SEATED_CALIBRATION.md
+@@ -0,0 +1,25 @@
++# Driver-provided seated calibration / 驱动提供的坐姿校准
++
++[English](#english) · [简体中文](#简体中文)
++
++<!-- vrization:english -->
++## English
++
++The Phone HMD supplies a version-5 chaperone JSON document on its own HMD property container before selecting universe 904040. The raw virtual head remains fixed at 1.6 m; the seated origin uses that same height and the standing origin remains at the floor. Empty collision bounds are deliberate: this is a seated, rotation-only setup with no physical room boundaries or positional tracking. Global chaperone files and other devices are not modified by this driver change.
++
++A Windows/iPhone diagnostic recorded 100/100 valid raw and standing poses but 100/100 invalid seated poses, calibration C201 throughout, with fresh phone updates aged 0–31 ms. An earlier external calibration repair enabled an AC race, but a later USB session again had invalid seated calibration. These observations motivate driver-owned initialization; they do not establish that USB itself caused the calibration failure. The original driver selected the universe without providing a chaperone document.
++
++The configuration schema and property usage reference ValveSoftware/OpenVR v2.15.6, commit `0924064316de3effbcd1acf1e309182a2deb1c05`, [Driver API documentation, Chaperone](https://github.com/ValveSoftware/openvr/blob/0924064316de3effbcd1acf1e309182a2deb1c05/docs/Driver_API_Documentation.md#chaperone). This is a newly written JSON configuration and property-publication helper, not copied sample code. The BSD-3-Clause SDK license and VRization MIT notices remain unchanged.
++
++The JSON/origin regression validates the actual embedded document. Native fixtures verify property order, own-container scope and failure propagation; existing pose, IPC, Stop and pixel tests remain enabled. CI results are separate from physical SteamVR acceptance. After installing, restart SteamVR and check valid seated poses and AC head movement. No frame-rate improvement is claimed; performance investigation remains separate.
++
++<!-- vrization:chinese -->
++## 简体中文
++
++手机头显先在自己的 HMD 属性容器中提供第 5 版 chaperone JSON，再选择坐标空间 904040。虚拟头部原始位置仍固定在 1.6 米；坐姿原点使用相同高度，站姿原点保持在地面。碰撞边界为空是有意设计：此设置仅支持坐姿和旋转，不提供真实房间边界或位置追踪。此驱动修改不更改全局 chaperone 文件或其他设备。
++
++Windows／iPhone 诊断记录了 100／100 个有效原始及站姿姿态，但 100／100 个无效坐姿姿态，全程为校准错误 C201；手机更新延迟为 0–31 毫秒。先前的外部校准修复曾让 AC 比赛正常显示，但之后一次 USB 会话再次出现无效坐姿校准。这些观察支持由驱动初始化自己的校准，但不能证明 USB 本身导致校准失败。原驱动只选择坐标空间，未提供 chaperone 文档。
++
++配置结构及属性用法参考 ValveSoftware/OpenVR v2.15.6，提交 `0924064316de3effbcd1acf1e309182a2deb1c05` 的[驱动 API 文档 Chaperone 部分](https://github.com/ValveSoftware/openvr/blob/0924064316de3effbcd1acf1e309182a2deb1c05/docs/Driver_API_Documentation.md#chaperone)。JSON 配置及属性发布辅助代码为新编写内容，并非复制示例代码。保留 SDK 的 BSD-3-Clause 许可证和 VRization 的 MIT 声明。
++
++JSON／原点回归检查实际嵌入的文档。原生测试检查属性顺序、自有容器范围及错误传播；原有姿态、IPC、停止及像素测试继续启用。CI 结果与 SteamVR 真机验收分开记录。安装后应重启 SteamVR，检查坐姿姿态有效性及 AC 头部转动。此修改不宣称提高帧率；性能问题仍需独立调查。
+diff --git a/experimental/steamvr/native/calibration.hpp b/experimental/steamvr/native/calibration.hpp
+new file mode 100644
+index 0000000..ae137d8
+--- /dev/null
++++ b/experimental/steamvr/native/calibration.hpp
+@@ -0,0 +1,37 @@
++// Original VRization seated-origin configuration, MIT.
++// Schema/API reference: Valve OpenVR 0924064316de3effbcd1acf1e309182a2deb1c05,
++// docs/Driver_API_Documentation.md, Chaperone (BSD-3-Clause SDK; see licenses).
++#pragma once
++#include <cstdint>
++#include <openvr_driver.h>
++
++namespace vrization {
++constexpr std::uint64_t kPhoneUniverse = 904040;
++// This virtual 3DOF driver fixes the head at y=1.6 m. The seated origin must
++// match that height; no physical tracking area or room-scale bounds are claimed.
++constexpr char kPhoneChaperone[] = R"json({
++  "jsonid": "chaperone_info",
++  "version": 5,
++  "time": "2026-10-28T00:00:00Z",
++  "universes": [{
++    "universeID": "904040",
++    "time": "2026-10-28T00:00:00Z",
++    "standing": {"translation": [0, 0, 0], "yaw": 0},
++    "seated": {"translation": [0, 1.6, 0], "yaw": 0},
++    "play_area": [1, 1],
++    "collision_bounds": []
++  }]
++})json";
++
++template<class Properties>
++vr::ETrackedPropertyError configure_phone_calibration(Properties* properties,
++        vr::PropertyContainerHandle_t container) {
++    // Supply the calibration before selecting this universe. This property is
++    // on our own HMD container; no global chaperone file or other device changes.
++    const auto error=properties->SetStringProperty(container,
++        vr::Prop_DriverProvidedChaperoneJson_String,kPhoneChaperone);
++    if(error!=vr::TrackedProp_Success) return error;
++    return properties->SetUint64Property(container,
++        vr::Prop_CurrentUniverseId_Uint64,kPhoneUniverse);
++}
++}
+diff --git a/experimental/steamvr/native/native_tests.cpp b/experimental/steamvr/native/native_tests.cpp
+index e599260..480dec7 100644
+--- a/experimental/steamvr/native/native_tests.cpp
++++ b/experimental/steamvr/native/native_tests.cpp
+@@ -1,5 +1,6 @@
+ // Original VRization native fixture tests, MIT. No SteamVR runtime is started.
+ #include "pose.hpp"
++#include "calibration.hpp"
+ #include "gpu.hpp"
+ #include "stop.hpp"
+ #include <functional>
+@@ -12,6 +13,35 @@ int checks=0;
+ void require(bool condition,const char* label) {
+     ++checks; if(!condition) throw std::runtime_error(label);
+ }
++void calibration_tests() {
++    struct Properties {
++        int calls=0;
++        std::string json;
++        vr::ETrackedPropertyError jsonError=vr::TrackedProp_Success;
++        vr::ETrackedPropertyError universeError=vr::TrackedProp_Success;
++        vr::ETrackedPropertyError SetStringProperty(vr::PropertyContainerHandle_t container,
++                vr::ETrackedDeviceProperty property,const char* value) {
++            require(container==77 && calls++==0,"calibration targets own HMD first");
++            require(property==vr::Prop_DriverProvidedChaperoneJson_String,"driver-provided JSON property");
++            json=value; return jsonError;
++        }
++        vr::ETrackedPropertyError SetUint64Property(vr::PropertyContainerHandle_t container,
++                vr::ETrackedDeviceProperty property,std::uint64_t value) {
++            require(container==77 && calls++==1,"select universe after supplying calibration");
++            require(property==vr::Prop_CurrentUniverseId_Uint64 && value==904040,"select only own universe");
++            return universeError;
++        }
++    } p;
++    require(vrization::configure_phone_calibration(&p,77)==vr::TrackedProp_Success && p.calls==2,
++        "seated calibration publication succeeds");
++    require(p.json==vrization::kPhoneChaperone,"publish complete calibration document");
++    Properties rejected; rejected.jsonError=vr::TrackedProp_UnknownProperty;
++    require(vrization::configure_phone_calibration(&rejected,77)==vr::TrackedProp_UnknownProperty && rejected.calls==1,
++        "failed calibration never selects an uninitialized universe");
++    Properties universeRejected;universeRejected.universeError=vr::TrackedProp_InvalidDevice;
++    require(vrization::configure_phone_calibration(&universeRejected,77)==vr::TrackedProp_InvalidDevice,
++        "universe property failure propagates");
++}
+ std::wstring unique_map(const wchar_t* suffix) {
+     return L"Local\\VRizationNativeTest-"+std::to_wstring(GetCurrentProcessId())+L"-"+
+         std::to_wstring(GetTickCount64())+L"-"+suffix;
+@@ -180,7 +210,7 @@ void ipc_bridge_tests(const wchar_t* dll) {
+ int wmain(int argc,wchar_t** argv) {
+     try {
+         if(argc!=3) throw std::runtime_error("Pass driver and IPC bridge DLL paths");
+-        pose_tests();ipc_tests();stop_tests();gpu_tests();factory_tests(argv[1]);ipc_bridge_tests(argv[2]);
++        calibration_tests();pose_tests();ipc_tests();stop_tests();gpu_tests();factory_tests(argv[1]);ipc_bridge_tests(argv[2]);
+         std::cout<<"PASS: "<<checks<<" native fixture checks (IPC + ctypes bridge, pose, owned Stop, WARP pixels, factory ABI); no SteamVR/hardware test"<<std::endl;return 0;
+     }catch(const std::exception& error){std::cerr<<"FAIL after "<<checks<<" checks: "<<error.what()<<std::endl;return 1;}
+ }
+diff --git a/experimental/steamvr/native/phone_driver.cpp b/experimental/steamvr/native/phone_driver.cpp
+index d79b776..d5aba14 100644
+--- a/experimental/steamvr/native/phone_driver.cpp
++++ b/experimental/steamvr/native/phone_driver.cpp
+@@ -1,6 +1,7 @@
+ // Original VRization implementation, MIT. OpenVR ABI and sample lifecycle ideas:
+ // ValveSoftware/openvr 0924064316de3effbcd1acf1e309182a2deb1c05 (BSD-3-Clause).
+ #include "pose.hpp"
++#include "calibration.hpp"
+ #include <mutex>
+ #include <cstring>
+ #include <atomic>
+@@ -34,7 +35,11 @@ public:
+         properties->SetFloatProperty(container,vr::Prop_UserIpdMeters_Float,.064f);
+         properties->SetFloatProperty(container,vr::Prop_DisplayFrequency_Float,90.f);
+         properties->SetFloatProperty(container,vr::Prop_SecondsFromVsyncToPhotons_Float,0.f);
+-        properties->SetUint64Property(container,vr::Prop_CurrentUniverseId_Uint64,904040);
++        if(vrization::configure_phone_calibration(properties,container)!=vr::TrackedProp_Success) {
++            index_=vr::k_unTrackedDeviceIndexInvalid;
++            vr::VRDriverLog()->Log("VRization: failed to provide its seated calibration; HMD activation stopped.");
++            return vr::VRInitError_Driver_CalibrationInvalid;
++        }
+         properties->SetBoolProperty(container,vr::Prop_IsOnDesktop_Bool,false);
+         properties->SetBoolProperty(container,vr::Prop_DisplayDebugMode_Bool,true);
+         properties->SetBoolProperty(container,vr::Prop_HasDriverDirectModeComponent_Bool,false);
+diff --git a/experimental/steamvr/tests/test_driver_calibration.py b/experimental/steamvr/tests/test_driver_calibration.py
+new file mode 100644
+index 0000000..af0c635
+--- /dev/null
++++ b/experimental/steamvr/tests/test_driver_calibration.py
+@@ -0,0 +1,27 @@
++"""Validate the actual driver-supplied chaperone document and origin math."""
++import json
++from pathlib import Path
++import re
++import unittest
++
++
++class DriverCalibrationTests(unittest.TestCase):
++    def test_seated_origin_matches_fixed_virtual_head(self):
++        native = Path(__file__).resolve().parents[1] / 'native'
++        source = (native / 'calibration.hpp').read_text(encoding='utf-8')
++        document = json.loads(re.search(r'R"json\((.*?)\)json"', source, re.S)[1])
++        self.assertEqual(document['jsonid'], 'chaperone_info')
++        self.assertEqual(document['version'], 5)
++        self.assertEqual(len(document['universes']), 1)
++        universe = document['universes'][0]
++        self.assertEqual(int(universe['universeID']), 904040)
++        self.assertEqual(universe['standing'], {'translation': [0, 0, 0], 'yaw': 0})
++        self.assertEqual(universe['seated'], {'translation': [0, 1.6, 0], 'yaw': 0})
++        # The virtual raw head at [0,1.6,0] becomes the seated origin [0,0,0].
++        self.assertEqual([a-b for a, b in zip([0,1.6,0], universe['seated']['translation'])], [0,0,0])
++        self.assertEqual(universe['collision_bounds'], [])
++        self.assertEqual(universe['play_area'], [1, 1])
++
++
++if __name__ == '__main__':
++    unittest.main()
