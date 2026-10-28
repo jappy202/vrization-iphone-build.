@@ -1,0 +1,97 @@
+name: Build VRization iPhone IPA
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/build-iphone.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  iphone:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Check out reviewed upstream source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: LexZeon/VRization
+          ref: 56f9db52bfb56edfdea92c1864f6bee28fa4f28f
+          persist-credentials: false
+
+      - name: Record tools and source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          git rev-parse HEAD > output/source-commit.txt
+          xcodebuild -version | tee output/xcode-version.txt
+          xcrun --sdk iphoneos --show-sdk-version | tee output/ios-sdk-version.txt
+
+      - name: Test shared Swift cores
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path ios
+          swift test --package-path ios/SteamVR
+
+      - name: Build for a physical iPhone without Apple credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project ios/VRizationSteamVR.xcodeproj \
+            -scheme VRizationSteamVR \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/vrization-device" \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY= build 2>&1 | tee output/device-build.log
+
+      - name: Check device binary and package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/vrization-device/Build/Products/Release-iphoneos/VRizationSteamVRApp.app"
+          test -d "$APP"
+          export VRIZATION_DEVICE_APP="$APP"
+          python3 - <<'PY'
+          import os, plistlib, subprocess
+          from pathlib import Path
+          app = Path(os.environ['VRIZATION_DEVICE_APP'])
+          with (app / 'Info.plist').open('rb') as f:
+              info = plistlib.load(f)
+          assert info['CFBundleSupportedPlatforms'] == ['iPhoneOS'], info
+          assert info['CFBundleIdentifier'] == 'org.vrization.ios.steamvr'
+          executable = app / info['CFBundleExecutable']
+          assert executable.is_file()
+          architectures = subprocess.check_output(['xcrun', 'lipo', '-archs', str(executable)], text=True).strip()
+          assert architectures == 'arm64', architectures
+          platform = subprocess.check_output(['xcrun', 'vtool', '-show-build', str(executable)], text=True)
+          assert 'platform IOS' in platform and 'IOSSIMULATOR' not in platform, platform
+          Path('output/device-platform.txt').write_text(platform)
+          Path('output/READ-ME.txt').write_text(
+              'UNSIGNED physical-iPhone build. Sign and install locally using your own Apple account.\n'
+              'No Apple credentials are used in this workflow. A Simulator app is not substituted.\n'
+              'Compilation and unit tests do not establish physical iPhone, optics, USB, SteamVR,\n'
+              'War Thunder, AirPods tracking integration, frame rate or latency compatibility.\n')
+          PY
+          mkdir -p "$RUNNER_TEMP/vrization-ipa/Payload"
+          ditto "$APP" "$RUNNER_TEMP/vrization-ipa/Payload/VRizationSteamVRApp.app"
+          (cd "$RUNNER_TEMP/vrization-ipa" && ditto -c -k --keepParent Payload "$GITHUB_WORKSPACE/output/VRization-SteamVR-unsigned.ipa")
+          cp LICENSE output/LICENSE.txt
+          cp THIRD_PARTY_NOTICES.md output/THIRD_PARTY_NOTICES.md
+          shasum -a 256 output/VRization-SteamVR-unsigned.ipa > output/SHA256SUMS.txt
+
+      - name: Upload IPA and build evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: VRization-iPhone-unsigned
+          path: output/
+          if-no-files-found: error
+          retention-days: 30
