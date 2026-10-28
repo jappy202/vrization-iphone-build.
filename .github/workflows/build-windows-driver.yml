@@ -1,0 +1,67 @@
+name: Phone HMD seated calibration / 手机头显坐姿校准
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/build-windows-driver.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: source
+    steps:
+      - name: Check out pinned upstream / 获取固定上游
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: LexZeon/VRization
+          ref: 56f9db52bfb56edfdea92c1864f6bee28fa4f28f
+          path: source
+          persist-credentials: false
+      - name: Check out build configuration / 获取构建配置
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: build-config
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12.10'
+      - name: Apply calibration patch / 应用校准补丁
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check ../build-config/patches/seated-calibration.patch
+          git apply ../build-config/patches/seated-calibration.patch
+          python scripts/check_docs.py
+          python -m unittest discover -s experimental/steamvr/tests -p test_driver_calibration.py -v
+      - name: Compile and test native driver / 编译并测试原生驱动
+        run: python scripts/build_steamvr_native.py --configuration Release --test
+      - name: Package driver update / 打包驱动更新
+        shell: python
+        run: |
+          from pathlib import Path
+          import hashlib, os, shutil
+          out = Path('artifacts/seated-driver-update')
+          out.mkdir(parents=True)
+          bundle = Path('artifacts/steamvr/native-bundle')
+          shutil.copy2(bundle/'drivers/vrization_phone/bin/win64/driver_vrization_phone.dll', out)
+          shutil.copytree(bundle/'native/licenses', out/'licenses')
+          shutil.copy2(bundle/'native-build-report.json', out)
+          shutil.copy2('artifacts/steamvr/native-build/Testing/Temporary/LastTest.log', out/'Native-tests.log')
+          shutil.copy2('experimental/steamvr/docs/SEATED_CALIBRATION.md', out)
+          shutil.copy2('CHANGELOG.md', out)
+          patch = Path('../build-config/patches/seated-calibration.patch')
+          shutil.copy2(patch, out/'seated-calibration.patch')
+          (out/'SOURCE.txt').write_text('Upstream: 56f9db52bfb56edfdea92c1864f6bee28fa4f28f\nBuild configuration: '+os.environ['GITHUB_SHA']+'\nPatch SHA256: '+hashlib.sha256(patch.read_bytes()).hexdigest()+'\nWindows native tests passed; SteamVR and physical hardware not run in CI.\n', encoding='utf-8')
+          (out/'INSTALL.txt').write_text('English\n1. Exit AC and quit SteamVR.\n2. Back up the existing driver_vrization_phone.dll in C:\\VRization\\drivers\\vrization_phone\\bin\\win64.\n3. Copy this new DLL into that same folder. Keep the rest of VRization unchanged.\n4. Restart SteamVR and connect the phone; rerun the pose check to verify valid seated poses, then test AC.\nThis candidate supplies its own seated calibration. No FPS improvement is claimed.\nUndo: quit SteamVR and restore the backed-up DLL.\n\n简体中文\n1. 退出 AC 和 SteamVR。\n2. 备份 C:\\VRization\\drivers\\vrization_phone\\bin\\win64 内原有的 driver_vrization_phone.dll。\n3. 将此新 DLL 复制到同一目录，其余 VRization 文件保持原样。\n4. 重启 SteamVR 并连接手机，重新运行姿态诊断确认坐姿有效，然后测试 AC。\n此候选驱动提供自己的坐姿校准，不宣称提高帧率。\n撤销：退出 SteamVR 后恢复备份 DLL。\n', encoding='utf-8')
+          files = sorted(p for p in out.rglob('*') if p.is_file())
+          (out/'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.relative_to(out).as_posix()+'\n' for p in files), encoding='utf-8')
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: success()
+        with:
+          name: VRization-seated-driver-update
+          path: source/artifacts/seated-driver-update
+          retention-days: 30
