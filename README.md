@@ -1,22 +1,21 @@
 # VRization iPhone build
 
-Builds an unsigned physical-iPhone IPA from [LexZeon/VRization](https://github.com/LexZeon/VRization), pinned to commit `56f9db52bfb56edfdea92c1864f6bee28fa4f28f` (SteamVR preview 0.5.1/build 3).
+Builds an unsigned physical-iPhone IPA from [LexZeon/VRization](https://github.com/LexZeon/VRization), pinned to commit `56f9db52bfb56edfdea92c1864f6bee28fa4f28f` (SteamVR preview 0.5.1), with the personal customization in `patches/phone-fit.patch`. Upstream license and attribution are preserved. This repository is not affiliated with the upstream authors.
 
-## Build
+## Build 4 changes
 
-The workflow runs on a standard GitHub-hosted macOS runner. It tests both Swift cores, builds using the physical iPhone SDK, validates an arm64 iOS executable, and packages `VRization-SteamVR-unsigned.ipa`. It never receives Apple account credentials or signing certificates. Build logs, source identity, licenses and a SHA-256 checksum accompany the artifact.
+Four independent phone-local sliders adjust left/right horizontal and vertical placement. Positive horizontal moves right; positive vertical moves up. Values save automatically and have their own reset button. The Metal image and editor outlines use the same local corrections. Shared Windows settings and head orientation are unchanged.
 
-See [Actions](../../actions). A green workflow result means software checks and compilation passed; it does not mean physical hardware testing passed. Download the `VRization-iPhone-unsigned` artifact from a successful run and extract the IPA. Failed runs may contain only diagnostics.
+Hide Settings discards/closes an active editor. Long-press outside the editor toolbar for 0.8 seconds to discard its draft and return to settings. Save and Discard also close the editor. Host tracking-pause semantics remain; use Refresh or PC Resume as needed.
 
-## Install later on Windows
+The build runs Swift core tests, compiles for the physical iPhone SDK, and runs a focused native Simulator test for per-eye control independence, saved calibration after relaunch and editor exits. A successful software check does not prove physical optics, the exact reported overlay symptom, USB/LAN reliability, game compatibility or performance.
 
-Sign and install the unsigned IPA locally with your own Apple account using [Sideloadly](https://sideloadly.io/). Enter account credentials yourself in that application. Free signing normally needs refreshing every seven days. Device trust, Developer Mode and signing compatibility may need attention during the first installation.
+## Download and install
 
-The iPhone app requires a matching Windows VRization SteamVR host. A successful iOS build alone is not a complete, tested game setup. USB is the intended first connection route to avoid relying on school Wi-Fi peer connectivity.
+See [Actions](https://github.com/jappy202/vrization-iphone-build./actions) for results. Download `VRization-iPhone-build4` from a successful run and extract the IPA. Failed runs may publish diagnostics without an IPA. The device executable is checked as arm64 iOS, not Simulator. Source identity, customization checksum, build logs, original notices and IPA checksum are included.
 
-## Scope
+Sign/install locally using [Sideloadly](https://sideloadly.io/) with your own Apple account. No Apple credentials or certificates are used by the workflow. For an update, use the same account and bundle settings as the existing installation. Avoid deleting the app if you want to preserve preferences. Free signing normally needs refreshing every seven days.
 
-- Phone-based orientation tracking first.
-- AirPods/HeadTrack integration is a later goal and is not implemented by this workflow.
-- No physical iPhone, lens fit, USB, SteamVR game, War Thunder, sustained frame rate or latency results have been established by this build configuration.
-- No runtime application source is changed; this repository automates building and packaging upstream code. It is not affiliated with the upstream authors.
+See [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) for initial setup. The upstream 0.5.1 Windows package needs no changes for these phone-local controls. USB and LAN are intended routes; a PC hotspot can supply a local network when campus Wi-Fi isolates peers.
+
+Phone-based tracking is the current scope. AirPods/HeadTrack input is not integrated by this patch.
