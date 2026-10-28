@@ -10,9 +10,6 @@ jobs:
   build:
     runs-on: windows-2022
     timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: ${{ runner.temp }}/vrization-driver/source
     steps:
       - name: Fetch pinned sources into a Windows-safe path / 获取固定源码
         shell: pwsh
@@ -39,6 +36,7 @@ jobs:
         with:
           python-version: '3.12.10'
       - name: Apply calibration patch / 应用校准补丁
+        working-directory: ${{ runner.temp }}/vrization-driver/source
         shell: bash
         run: |
           set -euo pipefail
@@ -47,8 +45,10 @@ jobs:
           python scripts/check_docs.py
           python -m unittest discover -s experimental/steamvr/tests -p test_driver_calibration.py -v
       - name: Compile and test native driver / 编译并测试原生驱动
+        working-directory: ${{ runner.temp }}/vrization-driver/source
         run: python scripts/build_steamvr_native.py --configuration Release --test
       - name: Package driver update / 打包驱动更新
+        working-directory: ${{ runner.temp }}/vrization-driver/source
         shell: python
         run: |
           from pathlib import Path
